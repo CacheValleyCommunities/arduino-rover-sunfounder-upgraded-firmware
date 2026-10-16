@@ -1,5 +1,7 @@
 # How to GalaxyRVR
 
+At the event, start with [HACKATHON.md](HACKATHON.md) (parts, tools, and the edit-to-deploy tracks).
+
 Flash the rover, drive it from the iOS app, program it in the browser with C2 Blockly, or write Arduino sketches with `rover.*`.
 
 Kit assembly and wiring photos: [SunFounder GalaxyRVR docs](https://docs.sunfounder.com/projects/galaxy-rvr/en/latest/). Wire format: [protocol.md](protocol.md).
@@ -8,7 +10,7 @@ Kit assembly and wiring photos: [SunFounder GalaxyRVR docs](https://docs.sunfoun
 
 ```
 Phone or laptop
-        │  Wi-Fi  (AP GalaxyRVR / 12345678)
+        │  Wi-Fi  (AP GalaxyRVR-XXXXXX / 12345678)
         ▼
 ESP32-CAM     camera, Wi-Fi, C2 Blockly, UDP/WebSocket bridge
         │  UART 115200  (WSB+ binary frames)
@@ -20,7 +22,7 @@ Arduino UNO   motors, RGB, IR, ultrasonic, servo, battery
 - **ESP32-CAM** owns the network. Firmware: [`ai-camera-firmware/`](../ai-camera-firmware/). Settings on port 80, MJPEG on 9000, WebSocket **30102**, UDP **30103**.
 - Remotes talk to the CAM, never the UNO: in-tree **iOS app**, **C2 Blockly** (`http://192.168.4.1/c2`), or **SunFounder Controller**.
 
-Default Wi-Fi: SSID `GalaxyRVR`, password `12345678`, AP `192.168.4.1`. RGB **blinks green** while idle, **magenta** when a remote is connected.
+Default Wi-Fi: on-air SSID `GalaxyRVR-` plus the last 6 hex digits of the CAM MAC, password `12345678`, CAM at `192.168.4.1`. RGB **blinks green** while idle, **magenta** when a remote is connected.
 
 ## 2. Get it running
 
@@ -50,7 +52,7 @@ python3 tools/deploy.py cam
 
 Use [`firmware.bin`](../firmware.bin) at the repo root (do not upload `firmware.elf`). Then:
 
-1. Switch the robot to **Run**, join Wi-Fi `GalaxyRVR` / `12345678`
+1. Switch the robot to **Run**, join Wi-Fi `GalaxyRVR-XXXXXX` / `12345678`
 2. Open [http://192.168.4.1](http://192.168.4.1)
 3. Use **Update** to upload `firmware.bin` only
 
@@ -59,7 +61,7 @@ Factory reset (forgotten AP password): short **IO13–IO15**, press reset, wait 
 ### Join the rover Wi-Fi
 
 1. Power the rover; wait until RGB blinks green.
-2. Join `GalaxyRVR` / `12345678`. You should get `192.168.4.x`. The CAM is `192.168.4.1`.
+2. Join `GalaxyRVR-XXXXXX` / `12345678` (the name your phone shows). You should get `192.168.4.x`. The CAM is `192.168.4.1`.
 
 If the AP never appears, factory-reset the CAM. If the AP appears but RGB never goes magenta, check the serial link and UNO firmware.
 

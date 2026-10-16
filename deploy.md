@@ -1,5 +1,7 @@
 # Flash the GalaxyRVR
 
+Hackathon path (parts, tools, which file to edit): [docs/HACKATHON.md](docs/HACKATHON.md).
+
 The rover is two boards. Flash **both** if you changed either firmware.
 
 ```
@@ -70,7 +72,7 @@ The OTA image must stay **under 1280 KB** so it fits the stock ESP32-CAM default
 Then:
 
 1. Switch the robot to **Run** and power it on.
-2. Join Wi-Fi **GalaxyRVR** / **12345678**.
+2. Join Wi-Fi **GalaxyRVR-XXXXXX** / **12345678**.
 3. Open [http://192.168.4.1](http://192.168.4.1).
 4. **Update** and choose **`firmware.bin` only**. Wait until it reports success, then restart if the page asks.
 
@@ -79,7 +81,7 @@ Do not pick `firmware.elf` (~15 MB) from that same folder. The CAM OTA slot is ~
 ## 3. Check that it took
 
 1. RGB blinks green within a few seconds of **Run**.
-2. Phone or laptop sees AP **GalaxyRVR**.
+2. Phone or laptop sees AP **GalaxyRVR-XXXXXX**.
 3. [http://192.168.4.1](http://192.168.4.1) loads the settings page.
 4. [http://192.168.4.1/c2](http://192.168.4.1/c2) loads Blockly.
 
@@ -94,7 +96,7 @@ Forgotten password or a wedged CAM: factory-reset the ESP32.
 1. Power the board.
 2. Short **IO13–IO15**, press reset, wait for two bright-LED blinks, release the short, press reset again.
 
-SSID/password return to the UNO’s `SET+` values (`GalaxyRVR` / `12345678` with the stock sketch). UART `SET+` commands are in [`ai-camera-firmware/Readme.md`](ai-camera-firmware/Readme.md).
+The stored name and password return to the UNO’s `SET+` values (`GalaxyRVR` / `12345678` with the stock sketch), so the on-air network is **GalaxyRVR-XXXXXX** again. UART `SET+` commands are in [`ai-camera-firmware/Readme.md`](ai-camera-firmware/Readme.md).
 
 If OTA says **Not Enough Space**, you uploaded the ELF or another oversized file. Use `firmware.bin` (under 1280 KB) above.
 

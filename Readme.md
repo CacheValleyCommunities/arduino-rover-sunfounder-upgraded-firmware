@@ -4,13 +4,15 @@ Arduino UNO firmware for the GalaxyRVR robot car. Drive it from the in-tree iOS 
 
 Current version: **2.0.0**
 
+**Hackathon (parts, tools, edit, deploy):** [docs/HACKATHON.md](docs/HACKATHON.md)
+
 **How to flash, drive, and code:** [docs/HOWTO.md](docs/HOWTO.md)
 
 ## Quick Start
 
 1. Open `galaxy-rvr/galaxy-rvr.ino` in Arduino IDE
 2. Board: Arduino UNO, pick the port, Upload
-3. Join Wi-Fi `GalaxyRVR` / `12345678`
+3. Join Wi-Fi `GalaxyRVR-XXXXXX` / `12345678` (the CAM appends the last 6 hex digits of its MAC)
 4. Drive with the iOS app (`ios/GalaxyRVR/GalaxyRVR.xcodeproj`), or open `http://192.168.4.1/c2` for Blockly
 
 Libraries: `SoftPWM`, `Servo`, `ArduinoJson`, `SunFounder_AI_Camera`. Board package: Arduino AVR 1.8.3.
@@ -66,6 +68,7 @@ test/cam/                   # host GoogleTest (ESP32-CAM)
 
 | Page | Contents |
 |---|---|
+| [docs/HACKATHON.md](docs/HACKATHON.md) | Bill of materials, tools, edit-to-deploy |
 | [docs/HOWTO.md](docs/HOWTO.md) | Flash, iOS, C2, Arduino `rover.*` |
 | [docs/protocol.md](docs/protocol.md) | Binary entities, serial, UDP, WebSocket |
 | [ai-camera-firmware/Readme.md](ai-camera-firmware/Readme.md) | CAM UART, OTA, factory reset |
