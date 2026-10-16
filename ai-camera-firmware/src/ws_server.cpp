@@ -1,0 +1,475 @@
+#include "ws_server.h"
+#include "Ticker.h"
+#include "app_session.h"
+#include "identity.h"
+#include "led_status.h"
+#include "serial_bridge.h"
+#include "settings.h"
+#include "wifi_helper.h"
+#include <ArduinoJson.h>
+
+// #define DEBUG
+
+#define PINGPONG_TIMEOUT 3000
+#define DATA_TIMEOUT 3000
+
+void onWebSocketEvent(uint8_t cn, WStype_t type, uint8_t *payload,
+                      size_t length);
+
+WebSocketsServer *ws = nullptr;
+
+uint8_t connectedClients[MAX_CLIENTS];
+uint32_t clientLastPingPong[MAX_CLIENTS];
+uint32_t clientLastDataTime[MAX_CLIENTS];
+uint8_t clientCount = 0;
+
+String wsName = "";
+String wsType = "";
+String wsCheck = "SC";
+String videoUrl = "";
+String videoTemplate = "";
+
+Ticker pingPongTimer;         // timer for checing ping_pong
+Ticker dataTimeoutTimer;      // timer for checking data timeout
+bool dataTimeoutSent = false;
+
+uint32_t last_send_time = 0;
+uint16_t SEND_INTERVAL = 20;
+
+void addClient(uint8_t cn) {
+  for (int i = 0; i < clientCount; i++) {
+    if (connectedClients[i] == cn) {
+#ifdef DEBUG
+      Serial.println("Client already connected");
+#endif
+      return;
+    }
+  }
+  if (clientCount < MAX_CLIENTS) {
+    connectedClients[clientCount] = cn;
+    clientLastPingPong[clientCount] =
+        millis();
+    clientLastDataTime[clientCount] = millis();
+    clientCount++;
+#ifdef DEBUG
+    Serial.printf("Client count: %d\n", clientCount);
+#endif
+  }
+}
+
+void removeClient(uint8_t cn) {
+  for (int i = 0; i < clientCount; i++) {
+    if (connectedClients[i] == cn) {
+      connectedClients[i] = connectedClients[clientCount - 1];
+      clientLastPingPong[i] = clientLastPingPong[clientCount - 1];
+      clientLastDataTime[i] = clientLastDataTime[clientCount - 1];
+      clientCount--;
+#ifdef DEBUG
+      Serial.printf("Client count: %d\n", clientCount);
+#endif
+      if (clientCount == 0) {
+        appSessionDrop(APP_PEER_WS, true, "WebSocket client disconnected");
+      }
+      break;
+    }
+  }
+}
+
+void updateClientPingPong(uint8_t cn) {
+  for (int i = 0; i < clientCount; i++) {
+    if (connectedClients[i] == cn) {
+      clientLastPingPong[i] = millis();
+      break;
+    }
+  }
+}
+
+void updateClientDataTime(uint8_t cn) {
+  for (int i = 0; i < clientCount; i++) {
+    if (connectedClients[i] == cn) {
+      clientLastDataTime[i] = millis();
+      break;
+    }
+  }
+}
+
+String intToString(uint8_t *value, size_t length) {
+  String buf;
+  for (int i = 0; i < length; i++) {
+    buf += (char)value[i];
+  }
+  return buf;
+}
+
+void checkPingPong() {
+  if (clientCount == 0) {
+    return;
+  }
+
+  for (int i = 0; i < clientCount; i++) {
+    uint8_t cn = connectedClients[i];
+    if (millis() - clientLastPingPong[i] > PINGPONG_TIMEOUT) {
+#ifdef DEBUG
+      Serial.printf("Client %d PingPong timeout\n", cn);
+#endif
+      if (ws != nullptr) {
+        ws->disconnect(cn);
+      } else {
+        removeClient(cn);
+      }
+      i--; // array shrank; recheck this index
+    }
+  }
+}
+
+// Pause the UNO with [APPSTOP] only when every client has gone idle.
+void checkDataTimeout() {
+  if (clientCount == 0) {
+    return;
+  }
+
+  bool allTimeout = true;
+  for (int i = 0; i < clientCount; i++) {
+    if (millis() - clientLastDataTime[i] <= DATA_TIMEOUT) {
+      allTimeout = false;
+      break;
+    }
+  }
+
+  if (allTimeout && !dataTimeoutSent) {
+    appSessionPause(APP_PEER_WS, "Data timeout from all clients");
+    dataTimeoutSent = true;
+  }
+}
+
+void resetDataTimeoutFlag() { dataTimeoutSent = false; }
+
+WS_Server::WS_Server() {}
+
+void WS_Server::close() {
+  if (ws != nullptr) {
+    ws->close();
+  }
+  delay(10);
+}
+
+void WS_Server::begin(int port, String _name, String _type, String _check) {
+  wsName = _name;
+  wsType = _type;
+  wsCheck = _check;
+
+  if (ws != nullptr) {
+    ws->close();
+    delete ws;
+    ws = nullptr;
+  }
+
+  ws = new WebSocketsServer(port);
+  ws->begin();
+  ws->onEvent(onWebSocketEvent);
+
+  pingPongTimer.attach_ms(1000, checkPingPong);
+  dataTimeoutTimer.attach_ms(1000, checkDataTimeout);
+}
+
+void WS_Server::loop() {
+  if (ws != nullptr) {
+    ws->loop();
+  }
+}
+
+void WS_Server::send(String data) {
+  if (ws != nullptr) {
+    for (int i = 0; i < clientCount; i++) {
+      ws->sendTXT(connectedClients[i], data);
+    }
+  }
+}
+
+// https://github.com/Links2004/arduinoWebSockets/blob/master/src/WebSocketsServer.cpp#L230
+void WS_Server::sendBIN(uint8_t *payload, size_t length) {
+  // bool WebSocketsServerCore::sendBIN(uint8_t num, const uint8_t * payload,
+  // size_t length)
+  if (ws != nullptr) {
+    for (int i = 0; i < clientCount; i++) {
+      ws->sendBIN(connectedClients[i], payload, length);
+    }
+  }
+}
+
+void handleConfig(uint8_t client_num, String payload) {
+  // Serial.println("SET+ config from websocket");
+  JsonDocument config;
+  JsonDocument result;
+  deserializeJson(config, payload);
+
+  result["state"] = F("ERROR");
+  JsonArray errors = result["errors"].to<JsonArray>();
+
+  // Get name
+  if (config["name"].is<String>()) {
+    String name = config["name"].as<String>();
+    settingsSetName(name);
+    result["state"] = F("OK");
+  }
+  if (config["type"].is<String>()) {
+    String type = config["type"].as<String>();
+    settingsSetType(type);
+    result["state"] = F("OK");
+  }
+  if (config["apSsid"].is<String>()) {
+    String ap_ssid = config["apSsid"].as<String>();
+    settingsSetApSsid(ap_ssid);
+    result["state"] = F("OK");
+  }
+  if (config["apPassword"].is<String>()) {
+    String ap_password = config["apPassword"].as<String>();
+    settingsSetApPassword(ap_password);
+    result["state"] = F("OK");
+  }
+  if (config["staSsid"].is<String>()) {
+    String staSsid = config["staSsid"].as<String>();
+    if (staSsid.length() <= 0 || staSsid.length() > 32) {
+      result["state"] = F("ERROR");
+      errors.add(F("STA_SSID_INVALID"));
+    } else {
+      settingsSetStaSsid(staSsid);
+      result["state"] = F("OK");
+    }
+  }
+  if (config["staPassword"].is<String>()) {
+    String staPassword = config["staPassword"].as<String>();
+    if (staPassword.length() < 8 || staPassword.length() > 64) {
+      result["state"] = F("ERROR");
+      errors.add(F("STA_PASSWORD_INVALID"));
+      return;
+    } else {
+      settingsSetStaPassword(staPassword);
+      result["state"] = F("OK");
+    }
+  }
+  if (config["command"].is<String>()) {
+    String command = config["command"].as<String>();
+    if (command == "restart-sta") {
+      // Serial.println("restart-sta");
+      String staSsid = settingsGetStaSsid();
+      String staPassword = settingsGetStaPassword();
+      if (staSsid.length() <= 0 || staSsid.length() > 32) {
+        result["state"] = F("ERROR");
+        errors.add(F("STA_SSID_INVALID"));
+        return;
+      }
+      if (staPassword.length() < 8 || staPassword.length() > 64) {
+        result["state"] = F("ERROR");
+        errors.add(F("STA_PASSWORD_INVALID"));
+        return;
+      }
+      bool r = wifiConnectSta(staSsid, staPassword, 5);
+      if (r) {
+        result["state"] = F("OK");
+        result["ip"] = wifiGetStaIp();
+      } else {
+        result["state"] = F("ERROR");
+        errors.add(F("STA_CONNECT_ERROR"));
+      }
+    } else if (command == "scan-wifi") {
+      int count = wifiScan();
+      result["state"] = F("OK");
+      JsonArray networks = result["networks"].to<JsonArray>();
+      for (int i = 0; i < count; i++) {
+        JsonObject network = networks.add<JsonObject>();
+        network["ssid"] = wifiGetScannedSSID(i);
+        network["rssi"] = wifiGetScannedRSSI(i);
+        network["secure"] = wifiGetScannedSecure(i);
+        network["channel"] = wifiGetScannedChannel(i);
+        network["bssid"] = wifiGetScannedBSSID(i);
+      }
+    } else if (command == "scan-clear") {
+      wifiScanClean();
+      result["state"] = F("OK");
+    } else {
+      result["state"] = F("ERROR");
+      errors.add(F("UNKNOWN_COMMAND"));
+    }
+  }
+  String result_str;
+  serializeJson(result, result_str);
+  if (ws != nullptr) {
+    ws->sendTXT(client_num, result_str);
+  }
+  // Serial.println(result_str);
+}
+
+void handleSunFounderController(String payload) {
+  // ------------- send simplified text -------------
+  JsonDocument recvBuffer;
+  deserializeJson(recvBuffer, payload);
+  String result = "WS+";
+
+  // REGIONS
+  for (int i = 0; i < REGIONS_LENGTH; i++) {
+    String region = String(REGIONS[i]);
+    String value;
+    if (recvBuffer[region].is<JsonArray>()) {
+      for (int j = 0; j < recvBuffer[region].size(); j++) {
+        value += recvBuffer[region][j].as<String>();
+        if (j != recvBuffer[region].size() - 1)
+          value += ',';
+      }
+    } else {
+      value = recvBuffer[region].as<String>();
+    }
+
+    if (value == "true")
+      value = "1";
+    else if (value == "false")
+      value = "0";
+    if (value != "null")
+      result += value;
+    if (i != REGIONS_LENGTH - 1)
+      result += ';';
+  }
+
+  // send
+  if (millis() - last_send_time > SEND_INTERVAL) {
+    Serial.println(result);
+    last_send_time = millis();
+  }
+}
+
+void onWebSocketEvent(uint8_t cn, WStype_t type, uint8_t *payload,
+                      size_t length) {
+  String out;
+
+  switch (type) {
+  // Client has disconnected
+  case WStype_DISCONNECTED: {
+    // IPAddress remoteIp = ws.remoteIP(client_num);
+    Serial.printf("[DISCONNECTED] Disconnected client[%d]\n", cn);
+    // Serial.println(remoteIp.toString());
+    removeClient(cn);
+    break;
+  }
+  // New client has connected
+  case WStype_CONNECTED: {
+    IPAddress remoteIp;
+    if (ws != nullptr) {
+      remoteIp = ws->remoteIP(cn);
+    }
+    String detail = String("WS client[") + String(cn) + "] " +
+                    remoteIp.toString();
+    appSessionNote(APP_PEER_WS, detail.c_str());
+
+    addClient(cn);
+
+    String check_info = identityWsHelloJson(
+        wsName, wsType, wsCheck, videoUrl, wifiGetStaIp(), videoTemplate);
+    delay(100);
+    if (ws != nullptr) {
+      ws->sendTXT(cn, check_info);
+    }
+    break;
+  }
+  // receive text
+  case WStype_TEXT: {
+#ifdef DEBUG
+    Serial.println("[DEBUG] [WS] WStype_TEXT");
+#endif
+    // Serial.print("WStype_TEXT, length: ");Serial.println(length);
+
+    out = intToString(payload, length);
+
+    updateClientPingPong(cn);
+
+    if (out.compareTo("ping") == 0) {
+#ifdef DEBUG
+      Serial.printf("[DEBUG] Received ping from client[%d]\n", cn);
+#endif
+
+      // send pong back
+      uint32_t _time = millis();
+      String msg = "pong " + String(_time);
+      if (ws != nullptr) {
+        ws->sendTXT(cn, msg);
+      }
+#ifdef DEBUG
+      Serial.printf("[DEBUG] [WS] send PONG to [%d]\n", cn);
+#endif
+
+      return;
+    }
+    if (out.startsWith("SET+")) {
+      handleConfig(cn, out.substring(4));
+      return;
+    }
+    if (length > 0) {
+      updateClientDataTime(cn);
+      resetDataTimeoutFlag();
+      handleSunFounderController(out);
+      return;
+    }
+    break;
+  }
+  case WStype_BIN: {
+#ifdef DEBUG
+    Serial.printf("[DEBUG] [WS] WStype_BIN from client[%d]\n", cn);
+#endif
+    updateClientPingPong(cn);
+    updateClientDataTime(cn);
+    resetDataTimeoutFlag();
+    serialBridgeForwardToUno(payload, (int)length);
+    break;
+  }
+  case WStype_ERROR: {
+    LED_STATUS_ERROR();
+#ifdef DEBUG
+    Serial.printf("[DEBUG] [WS] WStype_ERROR from client[%d]\n", cn);
+#endif
+    break;
+  }
+  case WStype_FRAGMENT_TEXT_START: {
+#ifdef DEBUG
+    Serial.printf("[DEBUG] [WS] WStype_FRAGMENT_TEXT_START from client[%d]\n",
+                  cn);
+#endif
+    break;
+  }
+  case WStype_FRAGMENT_BIN_START: {
+#ifdef DEBUG
+    Serial.printf("[DEBUG] [WS] WStype_FRAGMENT_BIN_START from client[%d]\n",
+                  cn);
+#endif
+    break;
+  }
+  case WStype_FRAGMENT: {
+#ifdef DEBUG
+    Serial.printf("[DEBUG] [WS] WStype_FRAGMENT from client[%d]\n", cn);
+#endif
+    break;
+  }
+  case WStype_FRAGMENT_FIN: {
+#ifdef DEBUG
+    Serial.printf("[DEBUG] [WS] WStype_FRAGMENT_FIN from client[%d]\n", cn);
+#endif
+    break;
+  }
+  case WStype_PING: {
+#ifdef DEBUG
+    Serial.printf("[DEBUG] [WS] WStype_PING from client[%d]\n", cn);
+#endif
+    break;
+  }
+  case WStype_PONG: {
+#ifdef DEBUG
+    Serial.printf("[DEBUG] [WS] WStype_PONG from client[%d]\n", cn);
+#endif
+    break;
+  }
+  default: {
+#ifdef DEBUG
+    Serial.printf("[DEBUG] [WS] Event Type: [%d] for client[%d]\n", type, cn);
+#endif
+    break;
+  }
+  }
+}

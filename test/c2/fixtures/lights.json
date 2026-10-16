@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "steps": [
+    { "lamp": "on" },
+    { "look": 45 },
+    { "set_color": [255, 0, 0] }
+  ]
+}

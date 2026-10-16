@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "if": { "op": "lt", "a": "distance_cm", "b": 20 },
+      "do": [{ "turn": "left 90deg" }],
+      "else": [{ "move_forward": "1ft" }]
+    }
+  ]
+}

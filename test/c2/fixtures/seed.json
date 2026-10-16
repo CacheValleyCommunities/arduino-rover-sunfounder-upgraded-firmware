@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "steps": [
+    { "move_forward": "1ft" },
+    { "turn": "right 90deg" }
+  ]
+}

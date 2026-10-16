@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>GalaxyRVR C2</title>
+  <link rel="stylesheet" href="/c2/c2.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="mark">C2</span>
+      <div>
+        <h1>GalaxyRVR</h1>
+        <p>Block coding</p>
+      </div>
+    </div>
+    <div class="hud" id="hud">
+      <span data-k="distance">DIST —</span>
+      <span data-k="ir">IR · ·</span>
+      <span data-k="battery">BAT —</span>
+      <span data-k="mode">IDLE</span>
+    </div>
+    <div class="actions">
+      <button id="btnRun" class="run">Run</button>
+      <button id="btnDeploy" class="deploy">Deploy</button>
+      <button id="btnStop" class="stop" disabled>Stop</button>
+    </div>
+  </header>
+  <main>
+    <div id="blocklyDiv"></div>
+    <aside>
+      <section id="blockHelp">
+        <h2>Block help</h2>
+        <p id="blockHelpTitle">Select a block</p>
+        <p id="blockHelpBody">Click a block on the workspace or in the toolbox. Sensor cheat sheet is below.</p>
+        <h2>Sensors</h2>
+        <dl class="help-list">
+          <dt>distance (cm)</dt>
+          <dd>Ultrasonic ping in centimetres. −1 means no echo (too close, too far, or aimed at empty air). HUD DIST is the same reading.</dd>
+          <dt>IR left / right</dt>
+          <dd>True when that bumper IR sees an obstacle (the pin reads LOW). False means that side is clear. Use with if or wait until.</dd>
+          <dt>battery (V)</dt>
+          <dd>Pack voltage, about 6.6–8.4 V. Not a percent.</dd>
+          <dt>compare</dt>
+          <dd>True/false test. Plug sensors or numbers into both sides. IR is 1 when blocked and 0 when clear.</dd>
+          <dt>threshold</dt>
+          <dd>Named follow/avoid distances from the sliders below. Apply settings, then compare against distance.</dd>
+        </dl>
+      </section>
+      <section id="simPanel" hidden>
+        <h2>Preview</h2>
+        <canvas id="simCanvas" width="256" height="176"></canvas>
+        <p id="simCaption">stopped</p>
+        <button id="btnResetMap" class="ghost" type="button">Reset map</button>
+      </section>
+      <section>
+        <h2>Thresholds</h2>
+        <div id="settings"></div>
+        <button id="btnSaveSettings" class="ghost">Apply settings</button>
+      </section>
+      <section>
+        <h2>Program</h2>
+        <pre id="preview">[]</pre>
+        <button id="btnUndeploy" class="ghost" type="button">Remove from rover</button>
+      </section>
+    </aside>
+  </main>
+  <script src="/c2/blockly.js"></script>
+  <script src="/c2/c2.js"></script>
+</body>
+</html>
